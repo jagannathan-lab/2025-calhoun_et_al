@@ -14,26 +14,26 @@ Once the input files are ready, simply navigate to our current stable release of
 
 Input your files using the file upload buttons in the upper left of the screen. You will need to submit a minimum of two MAVE datasets. Only one truth set file is allowed. Please note the truth set csv file upload is a separate button.  Then, adjust any of the options for setting seed for reproducibility, k-means clustering, training/test split proportions, and number of trees for random forest as needed. Next, click the analysis button at the bottom of the side panel to generate plots and the output files. At the top of the app, you can transition to the 'Analysis Results' tab to view plots and random forest cross-validation error. Finally, switch to the 'Downloads' tab. Each output has a separate button to click which will download the corresponding file. Current available outputs include:
 
-1: Model metrics (using pROC package coords function to determine "best" threshold) for full truth set for each individual MAVE and also the integration methods
-2: Variant level dataframe containing each variant from the truth set with annotated class and the outputs from different integration methods
-3: Variant level dataframe for all variants overlapping between input MAVEs and output from integration methods
-4: Model metrics (derived similarly as output file 1 using the threshold defined in output file 1) for training and test splits
-5: SVG of principal component plots with individual variants colored by either k-means clusters or truth set class
-6: SVG of OddsPath_Path and OddsPath_Benign bar plots for individual MAVEs and integration methods
+1. Model metrics (using pROC package coords function to determine "best" threshold) for full truth set for each individual MAVE and also the integration methods  
+2. Variant level dataframe containing each variant from the truth set with annotated class and the outputs from different integration methods  
+3. Variant level dataframe for all variants overlapping between input MAVEs and output from integration methods  
+4. Model metrics (derived similarly as output file 1 using the threshold defined in output file 1) for training and test splits  
+5. SVG of principal component plots with individual variants colored by either k-means clusters or truth set class  
+6. SVG of OddsPath_Path and OddsPath_Benign bar plots for individual MAVEs and integration methods  
 
 We have files that can be downloaded from Github that can be used as examples.
 
-Gene1: TP53
-Number of MAVE datasets: Up to 4
-File names: Giacomelli_MAVE_A.csv, Giacomelli_MAVE_B.csv,Giacomelli_MAVE_C.csv,Funketal_TP53_dataset_noDUPscopy.csv
-Number of truth sets: 1
+Gene1: TP53  
+Number of MAVE datasets: Up to 4  
+File names: Giacomelli_MAVE_A.csv, Giacomelli_MAVE_B.csv,Giacomelli_MAVE_C.csv,Funketal_TP53_dataset_noDUPscopy.csv  
+Number of truth sets: 1  
 Truth set name: TP53_classicOG_TS.csv
 
-Gene2: BRCA2
-Number of MAVE datasets: 2
-MAVE dataset file names: Couch_BRCA2.csv, Sharan_BRCA2.csv
-Number of truth sets: 1
-Truth set name: BRCA2_ClinvarTS_11jun2025.csv
+Gene2: BRCA2  
+Number of MAVE datasets: 2  
+MAVE dataset file names: Couch_BRCA2.csv, Sharan_BRCA2.csv  
+Number of truth sets: 1  
+Truth set name: BRCA2_ClinvarTS_11jun2025.csv  
 
 How does the app work?
 
