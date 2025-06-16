@@ -37,7 +37,7 @@ Truth set name: BRCA2_ClinvarTS_11jun2025.csv
 
 How does the app work?
 
-Our code is shared, so you can investigate for yourself! Briefly, all of the individual two column dataframes are merged. We plot the data in principal component space (PC1 & PC2) for visual representation. The data are split into training and test sets based on user input, followed by training a Naive Bayes model and a random forest model. Lastly, we calculate OddsPath based on the threshold which best separates benign and pathogenic variants for each input MAVE, principal component 1, the Naive Bayes model, or the random forest model. 
+Our code is shared, so you can investigate for yourself! Briefly, all of the individual two column dataframes are merged. We plot the data in principal component space (PC1 & PC2) for visual representation. K-means clustering is used to identify potential clusters within the data. The data are split into training and test sets based on user input, followed by training a Naive Bayes model and a random forest model. Lastly, we calculate OddsPath based on the threshold which best separates benign and pathogenic variants for each input MAVE, principal component 1, the Naive Bayes model, or the random forest model. 
 
 Future directions:
 
