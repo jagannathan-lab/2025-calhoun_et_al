@@ -43,3 +43,17 @@ Future directions:
 
 We hope to continue to maintain this app and add additional functionality over time! Please message us if there is something you would like added and we will try to incorporate in the next update. One thing that is definitely on our list is to add plots which compare scores for missense variants to scores for synonymous and premature truncation codon variants for each MAVE experiment uploaded to the app. Also, we would like to add c. variant naming as an alternative option to p. naming. 
 
+References
+
+Three of the TP53 example MAVE datasets come from this paper:  
+Giacomelli AO, Yang X, Lintner RE, McFarland JM, Duby M, Kim J, Howard TP, Takeda DY, Ly SH, Kim E, Gannon HS, Hurhula B, Sharpe T, Goodale A, Fritchman B, Steelman S, Vazquez F, Tsherniak A, Aguirre AJ, Doench JG, Piccioni F, Roberts CWM, Meyerson M, Getz G, Johannessen CM, Root DE, Hahn WC. Mutational processes shape the landscape of TP53 mutations in human cancer. Nat Genet. 2018 Oct;50(10):1381-1387. doi: 10.1038/s41588-018-0204-y. Epub 2018 Sep 17. PMID: 30224644; PMCID: PMC6168352.
+
+The other TP53 example MAVE datasets is from this paper:  
+Funk JS, Klimovich M, Drangenstein D, Pielhoop O, Hunold P, Borowek A, Noeparast M, Pavlakis E, Neumann M, Balourdas DI, Kochhan K, Merle N, Bullwinkel I, Wanzel M, Elmshäuser S, Teply-Szymanski J, Nist A, Procida T, Bartkuhn M, Humpert K, Mernberger M, Savai R, Soussi T, Joerger AC, Stiewe T. Deep CRISPR mutagenesis characterizes the functional diversity of TP53 mutations. Nat Genet. 2025 Jan;57(1):140-153. doi: 10.1038/s41588-024-02039-4. Epub 2025 Jan 7. PMID: 39774325; PMCID: PMC11735402.
+
+One of the BRCA2 example MAVE datasets is from this paper:  
+Sahu S, Galloux M, Southon E, Caylor D, Sullivan T, Arnaudi M, Zanti M, Geh J, Chari R, Michailidou K, Papaleo E, Sharan SK. Saturation genome editing-based clinical classification of BRCA2 variants. Nature. 2025 Feb;638(8050):538-545. doi: 10.1038/s41586-024-08349-1. Epub 2025 Jan 8. PMID: 39779848.
+
+The other BRCA2 example MAVE datasets is from this paper:  
+Huang H, Hu C, Na J, Hart SN, Gnanaolivu RD, Abozaid M, Rao T, Tecleab YA; CARRIERS Consortium; Pesaran T, Lyra PCM, Karam R, Yadav S, Nathanson KL, Domchek SM, de la Hoya M, Robson M, Mehine M, Bandlamudi C, Mandelker D, Monteiro ANA, Iversen ES, Boddicker N, Chen W, Richardson ME, Couch FJ. Functional evaluation and clinical classification of BRCA2 variants. Nature. 2025 Feb;638(8050):528-537. doi: 10.1038/s41586-024-08388-8. Epub 2025 Jan 8. PMID: 39779857; PMCID: PMC11821525.
+
