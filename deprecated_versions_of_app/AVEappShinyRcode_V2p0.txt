@@ -1,0 +1,709 @@
+library(shiny)
+library(bslib)
+
+library(dplyr)
+library(pROC)
+library(ggplot2)
+library(ggbiplot)
+library(svglite)
+library(tidyr)
+library(bio3d)
+library(mclust)
+library(naivebayes)
+library(psych)
+library(randomForest)
+library(caret)
+library(purrr)
+library(tidyverse)
+library("klaR")
+library(gridExtra)
+
+# this app performs an initial analysis on integrating multiple MAVEs for the same gene
+
+# Define UI for slider demo app ----
+ui <- page_sidebar(
+  
+  # App title ----
+  title = "Integrate multiple MAVE datasets with sample methods | current version 2.0",
+  # Recent updates for version 2.0
+  ## random forest now includes cross validation during training
+  ## also add metrics for supervised learning that are specific to train and test splits
+  
+  
+  # Recent updates for version 1.9
+  ## make separate upload buttons for MAVE data vs truth set
+  ### make separate versions of merged dataframes so can download ML predictions for non-truth set variants too
+  
+  # Recent updates for version 1.8
+  ## fixed OddsPath calculation --> ask Malvika to double-check
+  ### add ROC AUC to output model metric csv #done
+  
+  # future updates
+  ## add ROC curve plot capability if I can figure out how to get Shiny to cooperate with 'arbitrary' number of plots
+  ## output Naive Bayes cross validation error score
+  ## reimplement GFMM
+  
+  # Sidebar panel for inputs ----
+  sidebar = sidebar(
+    
+    # Input: Select csv files ----
+    fileInput(
+      "files",
+      "Choose MAVE csv files | Multiple MAVE datasets, same gene",
+      multiple = TRUE,
+      accept = c(".csv")
+    ),
+    fileInput(
+      "files2",
+      "Choose Truth Set csv file for gene of interest",
+      multiple = FALSE,
+      accept = c(".csv")
+    ),
+    
+    # Horizontal line ----
+    hr(),
+    numericInput("whatSeed", label = h6("What seed to set for random train/test split? default=1234"), value = 1234),
+    numericInput("num", label = h6("How many clusters for k-means? default=2"), value = 2),
+    numericInput("num2", label = h6("How many random sets for k-means? default=20"), value = 20),
+    #radioButtons("radio", label = h6("Which algorithm for GFMM?"),
+    #             choices = list("MclustDA (Default)" = 1, "EDDA" = 2), 
+    #             selected = 1),
+    numericInput("num3", label = h6("What percent of variants for training (0.1-0.9)? default=0.8"), value = 0.8),
+    numericInput("num4", label = h6("How many trees for random forest? default=500"), value = 500),
+    #numericInput("num5", label = h6("What stepFactor for random forest? default=1.2"), value = 1.2),
+    #numericInput("num6", label = h6("What relative improvement to continue search? default=0.01"), value = 0.01),
+        hr(),
+    
+    fluidPage(
+      #tags$head(tags$script(src = "message-handler.js")),
+      actionButton("do", "Click here to perform analysis")
+    ),
+    fluidPage(
+      downloadButton("downloadData", "After analysis, click here to download model metrics")
+    ),
+    fluidPage(
+      downloadButton("downloadData2", "After analysis, click here to download truth set variant level dataframe")
+    ),
+    fluidPage(
+      downloadButton("downloadData3", "After analysis, click here to download full variant level dataframe")
+    ),
+    fluidPage(
+      downloadButton("downloadData4", "After analysis, click here to download model metrics for supervised learning train and test splits")
+    ),
+    fluidPage(
+      downloadButton("downloadPlot", "After analysis, click here to download an svg of principal component plots")
+    ),
+  fluidPage(
+    downloadButton("downloadPlot2", "After analysis, click here to download an svg of OddsPath plots")
+  )),
+    mainPanel( # add more plots!
+      plotOutput('plot1'),
+      plotOutput('plot2'),
+      plotOutput('plot3'),
+      plotOutput('plot4'),
+      #uiOutput("ROCplots"), # trying to use code from here to enable ROC plots but so far no luck: https://www.reddit.com/r/rstats/comments/nwyh3z/how_to_print_multiple_plots_using_plot_function/
+      #textOutput("NB_intro"),
+      #textOutput("NV_cv"),
+      textOutput("RF_intro"),
+      textOutput("RF_cv")
+    )
+  )
+
+# Define server logic to read selected file ----
+server <- function(input, output, session) {
+  observeEvent(input$do, {
+    
+    req(input$files)
+    req(input$files2)
+    
+    ####### input app code here ########
+    
+    # we are going to specify in the instructions how users format their input data
+    ## to match the style of our TP53 scores csv
+    ### and any duplicates need to be collapsed too with dplyr summarise or other method
+    
+    # sample code for collapsing duplicates
+    
+    #tibble1 <- df1 %>%
+    #  group_by(hgvs_pro) %>%
+    #  dplyr::summarise(mean = mean(score), n = n())
+    
+    # read in 2 or more MAVE files and merge
+    print(length(input$files[,1])) # troubleshooting
+    print(input$files) # troubleshooting
+    lst = list()
+    for(i in 1:length(input$files[,1])){
+      #print(read.csv(file=input$files[[i, 'datapath']],sep=",")) # troubleshooting
+      lst[[i]] <- read.csv(file=input$files[[i, 'datapath']],sep=",")
+      #print(lst[[i]]) # troubleshooting
+    }
+    
+    # read in truth set csv file
+    #print(input$files2) #troubleshooting
+    #print(input$files2$datapath) #troubleshooting
+    truthSet_df <- read.csv(input$files2$datapath, sep=",") # Did I fix it?
+    #str(truthSet_df)
+    
+    # merge multiple dataframes in a list
+    #list(x, y, z) %>% reduce(left_join, by = "i")
+    mergedMAVE.data.frame <- lst %>% reduce(left_join, by = "hgvs_pro")
+    #merged.data.frame <- Reduce(function(...) merge(..., all=T), lst)
+    #print(head(mergedMAVE.data.frame)) # troubleshooting
+    #print(tail(mergedMAVE.data.frame)) # troubleshooting
+    #print(sum(is.na(mergedMAVE.data.frame))) # any NAs in this dataframe?
+    
+    # now merge truth set and MAVE dataframes
+    
+    print('testing1') # troubleshooting
+    #df1 <- read.csv(file="MAVE1.csv", sep=",")
+    #df2 <- read.csv(file="MAVE2.csv", sep=",")
+    TSandMAVE_df <- merge(mergedMAVE.data.frame,truthSet_df,by="hgvs_pro")
+    
+    # need to drop NAs
+    
+    # no_na_df is truth set and MAVE df without NAs
+    no_na_df <- TSandMAVE_df %>% drop_na()
+    
+    # no_na_MAVEonly_df is MAVE df without NAs
+    no_na_MAVEonly_df <- mergedMAVE.data.frame %>% drop_na()
+    
+    print('testing2') # troubleshooting
+    
+    ################
+    ################
+    ################
+    
+    # read in data
+    df1 <- no_na_df
+      
+    # make a version of dataframe without the class column or variant name column
+    drops <- c("binary_clinvar_class","hgvs_pro")
+    df_subset <- df1[ , !(names(df1) %in% drops)]
+    
+    # do same for no TruthSet df
+    df_subset_MAVEonly <- no_na_MAVEonly_df[ , !(names(no_na_MAVEonly_df) %in% drops)]
+    
+    ######################
+    ######################
+    ###################### PCA / kmeans
+    
+    # scale the data 
+    data_scaled = scale(df_subset)
+    
+    data_scaled_MAVEonly <- scale(df_subset_MAVEonly)
+    
+    # w scaling #PCA
+    pc <- prcomp(data_scaled,
+                 center = TRUE,
+                 scale. = TRUE)
+    
+    pc2 <- prcomp(data_scaled_MAVEonly,
+                 center = TRUE,
+                 scale. = TRUE)
+    
+    # add PC1 to newdataframe
+    df_wPC1 <- df_subset
+    df_wPC1$PC1 <- pc$x[,1]
+    no_na_df$PC1 <- df_wPC1$PC1
+    no_na_MAVEonly_df$PC1 <- pc2$x[,1]
+    
+    print('testing3') # troubleshooting
+    
+    # Kmeans ## w data scaling
+    
+    set.seed(input$whatSeed)
+    kCluster <- kmeans(data_scaled, input$num, nstart = input$num2)
+    kCluster
+    kCluster$cluster <- as.factor(kCluster$cluster)
+    table(kCluster$cluster, df1$binary_clinvar_class)
+
+    no_na_df$kMeansCluster <- kCluster$cluster
+    
+    
+    
+    # kmeans clustering plot ## color points by kmeans assign cluster
+    k_meansPLOT1 <- ggbiplot(pc,
+                             obs.scale = 1,
+                             var.scale = 1,
+                             groups = kCluster$cluster,
+                             ellipse = TRUE,
+                             circle = TRUE,
+                             ellipse.prob = 0.68)
+    k_meansPLOT1 <- k_meansPLOT1 + scale_color_discrete(name = '')
+    k_meansPLOT1 <- k_meansPLOT1 + theme(legend.direction = 'horizontal',
+                                         legend.position = 'top') +
+                                  ggtitle('Variants grouped by k-means clusters')
+    output$plot1 <- renderPlot({
+      k_meansPLOT1
+    })
+    
+    # kmeans clustering plot ## color points by class
+    k_meansPLOT2 <- ggbiplot(pc,
+                             obs.scale = 1,
+                             var.scale = 1,
+                             groups = as.factor(df1$binary_clinvar_class),
+                             ellipse = TRUE,
+                             circle = TRUE,
+                             ellipse.prob = 0.68)
+    k_meansPLOT2 <- k_meansPLOT2 + scale_color_discrete(name = '')
+    k_meansPLOT2 <- k_meansPLOT2 + theme(legend.direction = 'horizontal',
+                                         legend.position = 'top') +
+                          ggtitle('Variants grouped by clinvar class')
+
+    output$plot2 <- renderPlot({
+      k_meansPLOT2
+    })
+    
+    kCluster2 <- kmeans(data_scaled_MAVEonly, input$num, nstart = input$num2)
+    str(kCluster2) #troubleshooting
+    str(no_na_MAVEonly_df) #troubleshooting
+    no_na_MAVEonly_df$kMeansCluster <- kCluster2$cluster
+    
+    print('testing4') # troubleshooting
+    
+    ###################### 
+    ###################### 
+    ###################### GFMM # not working right now, troubleshoot eventually
+    
+    # maybe with Shiny add way for user to select default or EDDA
+    
+    # on scaled data ## default
+    #if (input$radio == 1) {
+    #mod <- MclustDA(data_scaled, df1$binary_clinvar_class)
+    #summary(mod)}
+    
+    # on scaled data ## EDDA
+    #if (input$radio == 2) {
+    #mod <- MclustDA(data_scaled, df1$binary_clinvar_class, modelType = "EDDA")
+    #summary(mod)}
+    
+    ##cross validation for GFMM
+    
+    #cv <- cvMclustDA(mod, nfold = 10)
+    #unlist(cv[3:6])
+    # ce      se.ce      brier   se.brier 
+    # 0.04347826 0.01653451 0.03763904 0.01277613
+    
+    ######################
+    ###################### 
+    ###################### naive bayes
+    
+    # make dataframe with class
+    str(data_scaled)
+    data_scaled_df2 <- as.data.frame(data_scaled)
+    data_scaled_df2$class <- as.factor(df1$binary_clinvar_class)
+    str(data_scaled_df2)
+    
+    # train test split
+    set.seed(input$whatSeed)
+    ind <- sample(2, nrow(data_scaled_df2), replace = T, prob = c(input$num3, 1-input$num3))
+    train <- data_scaled_df2[ind == 1,]
+    test <- data_scaled_df2[ind == 2,]
+    str(train)
+    str(test)
+    
+    # drop class from train ## crap gotta fix this, can't hard code with Shiny app!!! 
+    drops <- c("class")
+    train_noClass <- train[ , !(names(train) %in% drops)]
+    test_noClass <- test[ , !(names(test) %in% drops)]
+    
+    # train model
+    #model <- naive_bayes(class ~ ., data = train, usekernel = T) # previous implementation of naive bayes
+    model = train(train_noClass,train$class,'nb',trControl=trainControl(method='cv',number=3)) # current implementation with cross-validation
+    model
+    plot(model) 
+    
+    # predict
+    p <- predict(model, train, type = 'prob')
+    head(cbind(p, train))
+    
+    # CM
+    p1 <- predict(model, train)
+    train_noClass_df2 <- train_noClass
+    train_noClass_df2$NBpred <- p1
+    tab1 <- table(p1, train$class)
+    tab1
+
+    1 - sum(diag(tab1)) / sum(tab1)
+    
+    p2 <- predict(model, test)
+    test_noClass_df2 <- test_noClass
+    test_noClass_df2$NBpred <- p2
+    tab2 <- table(p2, test$class)
+    tab2
+    
+    1 - sum(diag(tab2)) / sum(tab2)
+    
+    p <- predict(model, data_scaled_df2, type = 'prob')
+    str(p)
+    p_df <- as.data.frame(p)
+    p_df$variant <- df1$hgvs_pro
+    p_df$class <- df1$binary_clinvar_class
+    str(p_df)
+    no_na_df$NBpred <- p
+    
+    # make dataframe with class
+    data_scaled_MAVEonly_df <- as.data.frame(data_scaled_MAVEonly)
+    data_scaled_MAVEonly_df$class <- as.factor(vector(mode="character", length=length(rownames(data_scaled_MAVEonly_df))))
+    str(data_scaled_MAVEonly_df) # troubleshooting
+    p <- predict(model, data_scaled_MAVEonly_df, type = 'prob')
+    str(p) # troubleshooting
+    no_na_MAVEonly_df$NBpred <- p
+    
+    print('testing5') # troubleshooting
+    
+    ######################
+    ###################### 
+    ###################### random forest in R
+    
+    # going to try slight different implementation of RF
+    ## based on https://rpubs.com/jvaldeleon/forest_repeat_cv
+    
+    str(train)
+    
+    ## Define repeated cross validation with 3 folds and three repeats
+    repeat_cv <- trainControl(method='repeatedcv', number=3, repeats=3)
+    
+    forest <- train(
+      
+      # Formula. We are using all variables to predict Species
+      #class~., 
+      
+      # Source of data; remove the Species variable
+      train_noClass,
+      
+      # outcomes
+      train$class,
+      
+      # `rf` method for random forest
+      method='rf', 
+      
+      # Add repeated cross validation as trControl
+      trControl=repeat_cv,
+      
+      # Accuracy to measure the performance of the model
+      metric='Accuracy',
+      
+      # adjust number of trees
+      ntree=input$num4)
+    
+    #bestmtry <- tuneRF(train,train$class,ntreeTry=input$num4,stepFactor = input$num5, improve = input$num6, trace=T, plot= T) 
+    
+    #model <- randomForest(class~.,data= train)
+    
+   print(forest$finalModel)
+    
+    model <- forest
+    
+    #importance(model) 
+    
+    #varImpPlot(model)
+    
+    #pred_test <- predict(model, newdata = test, type= "class")
+    
+    #pred_test
+    
+    str(test)
+    #confusionMatrix(table(pred_test,test$class))
+    
+    pred_train_prob <- predict(model, newdata = train, type= "prob")
+    
+    rf_train_df <- as.data.frame(cbind(train,pred_train_prob))
+    
+    pred_test_prob <- predict(model, newdata = test, type= "prob")
+    
+    rf_test_df <- as.data.frame(cbind(test,pred_test_prob))
+    
+    data_scaled_df <- as.data.frame(data_scaled)
+    predict_RFall <- predict(model, newdata = data_scaled_df, type= "prob")
+    predict_RFall_df <- as.data.frame(predict_RFall)
+    
+    print('testingBEFORE')
+    rf_cv <- rfcv(train_noClass, train$class, cv.fold=3, step=0.5)
+    print('testingAFTER')
+    
+    no_na_df$RFpred <- predict_RFall_df$P
+    
+    data_scaledMAVEonly_df <- as.data.frame(data_scaled_MAVEonly)
+    predict_RFall2 <- predict(model, newdata = data_scaledMAVEonly_df, type= "prob")
+    predict_RFall2_df <- as.data.frame(predict_RFall2)
+    str(predict_RFall2_df)
+    no_na_MAVEonly_df$RFpred <- predict_RFall2_df$P
+    
+    print('testing6') # troubleshooting
+    
+    #######################
+    #######################
+    #######################
+    
+    # write loop to generate ROC curve for each individual MAVE
+    ## and also the integrated dataset
+    
+    # make a new subset df with added PC1, GFMM?, naive bayes, and random forest
+    ## not sure how to make probabilites with GFMM, similar problem to kmeans clustering
+    ### so leave off here, but can include output or plots using GFMM / kmeans
+    df_subset2 <- df_subset
+    df_subset2$PC1 <- df_wPC1$PC1
+    df_subset2$NB <- p_df$P
+    df_subset2$RF <- predict_RFall_df$P
+    
+    #run on first column
+    ROC_firstCol <- roc(as.factor(df1$binary_clinvar_class), df_subset2[[1]])
+    my.coords <- coords(ROC_firstCol, "best", ret = "all", transpose = FALSE)
+    
+    # setup empty dataframe to accept data within loop # add 25th column for AUC
+    big.coords_df <- data.frame(matrix(ncol=25,nrow=length(colnames(df_subset2))))
+    colnames(big.coords_df) <- c(colnames(my.coords),'ROC_AUC') # add AUC column
+    rownames(big.coords_df) <- colnames(df_subset2)
+    #str(big.coords_df)
+    # can i use a list or vector of plots to make ROC curves?
+    plot_vector <- vector(mode = "list", length = length(colnames(df_subset2)))
+    
+    # loop through each MAVE and calculate ROC curve
+    for (i in colnames(df_subset2)){
+      ROC_loop <- roc(as.factor(df1$binary_clinvar_class), df_subset2[[i]])
+      AUC_loop <- auc(ROC_loop)
+      # the next two lines work to produce ROC plots locally in Rstudio, but stumped as to how to make this work with Shiny
+      #plot_vector[i] <- plot(ROC_loop, col="purple", legacy.axes=T, main=rownames(big.coords_df[i,])) # comment this out 
+      #plot_vector[i] # comment this out 
+      my.coords_loop <- coords(ROC_loop, "best", ret = "all", transpose = FALSE)
+      big.coords_df[i,] <- my.coords_loop
+      big.coords_df[i,25] <- AUC_loop
+      #print(big.coords_df[i,])
+      #counter<-counter+1
+      #print(counter)
+    }
+ 
+    # lets develop model metrics specific for train and test splits
+    # store NB threshold
+    NBthreshold <- big.coords_df["NB",1]
+    ROC_NB_train <- roc(as.factor(train$class), as.numeric(train_noClass_df2$NBpred))
+    #plot(ROC_NB_train, col="purple", legacy.axes=T, main="ROC_NB_train") #troubleshooting
+    my.coords_NB_train <- coords(ROC_NB_train, as.numeric(NBthreshold), ret = "all", transpose = FALSE)
+    print(my.coords_NB_train) #troubleshooting
+    ROC_NB_test <- roc(as.factor(test$class), as.numeric(test_noClass_df2$NBpred))
+    my.coords_NB_test <- coords(ROC_NB_test, as.numeric(NBthreshold), ret = "all", transpose = FALSE)
+    print(my.coords_NB_test) #troubleshooting
+    
+    # store RF threshold
+    RFthreshold <- big.coords_df["RF",1]
+    print(str(rf_train_df))
+    ROC_RF_train <- roc(as.factor(train$class), as.numeric(rf_train_df$P))
+    #plot(ROC_NB_train, col="purple", legacy.axes=T, main="ROC_NB_train") #troubleshooting
+    my.coords_RF_train <- coords(ROC_RF_train, as.numeric(RFthreshold), ret = "all", transpose = FALSE)
+    print(my.coords_RF_train) #troubleshooting
+    ROC_RF_test <- roc(as.factor(test$class), as.numeric(rf_test_df$P))
+    my.coords_RF_test <- coords(ROC_RF_test, as.numeric(RFthreshold), ret = "all", transpose = FALSE)
+    print(my.coords_RF_test) #troubleshooting
+    
+    # make a dataframe
+    test_train_split_metrics <- as.data.frame(rbind(my.coords_NB_train,my.coords_NB_test,my.coords_RF_train,my.coords_RF_test))
+    rownames(test_train_split_metrics) <- c("NB_train","NB_test","RF_train","RF_test")
+    
+    # how to add ROC curves to Shiny app
+    ## wish I could overlay like code below, but probably going to have to display separately
+    #plot(ROC_DN_reporter, col="purple", legacy.axes=T,
+    #     main="Individual assays")
+    #lines(ROC_WT_nutlin, col = "red")
+    #lines(ROC_Etoposide, col = "green")
+    #lines(ROC_null_nutlin, col = "blue")
+    
+    #print(model$results$Kappa) # troubleshooting
+    
+    print('testing7') # troubleshooting
+    
+    #######################
+    #######################
+    ####################### calculate OddsPath
+    
+    # add correct pseudocount adjustments
+    ## thank you Malvika!!
+    # Pseudocount adjustments
+    # if assay_abnormal_num == total_assay_true_path:
+    #  assay_abnormal_num += 1
+    
+    # if total_assay_true_ben == 0 and benign_controls > 1:
+    #  total_assay_true_ben += 1
+    
+    # OddsPath = [P2 * (1 - P1)] / [(1 - P2) * P1] 
+    
+    # calculate OddsPath
+    
+    # pre-loop
+    
+    # count number of path and number of benign
+    path_count <- length(which(df1$binary_clinvar_class == "P"))
+    benign_count <- length(which(df1$binary_clinvar_class == "B"))
+    
+    ## set variables not specific to MAVE or integration method
+    total_controls <- path_count + benign_count
+    ## calculate prior probability
+    
+    prior_prob_path <- path_count / total_controls
+    prior_prob_benign <- benign_count / total_controls
+    
+    # loop
+    
+    # setup empty dataframe to accept data within loop
+    oddsPath_path_vec <- c()
+    oddsPath_benign_vec <- c()
+    counter=1 # not sure if I need a counter
+    
+    # need to fix this
+    for (i in colnames(df_subset2)){
+      
+      # set MAVE-specific or integration method-specific variables
+      TotalAssayAbnormal <- big.coords_df$tp[counter] + big.coords_df$fp[counter]
+      TotalAssayNormal <- (big.coords_df$tn[counter]+big.coords_df$fn[counter])
+      TruePathInAbnormal <- big.coords_df$tp[counter]
+      TruePathInNormal <- big.coords_df$fn[counter]
+      #AssayFalseNegative <- big.coords_df$fn[counter]
+      # Pseudocount adjustments
+      # if assay_abnormal_num == total_assay_true_path:
+      #  assay_abnormal_num += 1
+      if (TotalAssayAbnormal == TruePathInAbnormal) {
+        TotalAssayAbnormal = TotalAssayAbnormal + 1
+      }
+      
+      # if total_assay_true_ben == 0 and benign_controls > 1:
+      #   total_assay_true_ben += 1
+      if (TruePathInNormal == 0 & benign_count>1) {
+        TruePathInNormal = 1
+      }
+     
+      ProportionPathInAbnormal <- TruePathInAbnormal / TotalAssayAbnormal
+      ProportionPathInNormal <- TruePathInNormal / TotalAssayNormal
+      
+      # calculate posterior probability
+      # pull from ROC
+      #post_prob_path <- TruePathInAbnormal / TotalAssayAbnormal
+      #post_prob_path <- big.coords_df$tp[counter] / (big.coords_df$tp[counter] + big.coords_df$fp[counter] + 1)
+      #post_prob_path <- big.coords_df$tp[counter] / (big.coords_df$tp[counter] + big.coords_df$fp[counter])
+      
+      #post_prob_benign <- big.coords_df$fn[counter] / (big.coords_df$tn[counter]+big.coords_df$fn[counter])
+      #post_prob_benign <- AssayFalseNegative / (big.coords_df$tn[counter]+big.coords_df$fn[counter])
+      
+      # troubleshooting 
+      #print(post_prob_path)
+      #print(post_prob_benign)
+      #oddsPath_path_vec[counter] <- (post_prob_path * (1 - prior_prob_path)) / ((1 - post_prob_path) * prior_prob_path)
+      oddsPath_path_vec[counter] <- (ProportionPathInAbnormal * (1 - prior_prob_path)) / ((1 - ProportionPathInAbnormal) * prior_prob_path)
+      
+      # troubleshooting 
+      #print(oddsPath_path_vec[counter])
+      oddsPath_benign_vec[counter] <- (ProportionPathInNormal * (1 - prior_prob_path)) / ((1 - ProportionPathInNormal) * prior_prob_path)
+      # troubleshooting 
+      #print(oddsPath_benign_vec[counter])
+      counter=counter+1
+    }
+ 
+    
+    # add OddsPath to output csv
+    big.coords_df$OddsPath_path <- oddsPath_path_vec
+    big.coords_df$OddsPath_benign <- oddsPath_benign_vec
+    
+    # 
+    
+    
+    
+    OddsPath_PLOT1 <- ggplot(big.coords_df, aes(x=rownames(big.coords_df),y=OddsPath_path, fill=as.factor(rownames(big.coords_df)))) +
+      geom_col() + theme_bw() + xlab("") +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),legend.position="none")
+    
+    output$plot3 <- renderPlot({
+      OddsPath_PLOT1
+    })
+    
+    OddsPath_PLOT2 <- ggplot(big.coords_df, aes(x=rownames(big.coords_df),y=OddsPath_benign, fill=as.factor(rownames(big.coords_df)))) +
+      geom_col() + theme_bw() + xlab("") +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),legend.position="none")
+    
+    output$plot4 <- renderPlot({
+      OddsPath_PLOT2
+    })
+        
+    # this works but plots too small, can make bigger???
+    ## lets only use for output svg
+    #svglite(filename = "/Users/jeffreycalhoun/Downloads/Rplots.svg", width = 10, height = 8,
+    #        bg = "white", pointsize = 12, scaling = 1)
+    
+    #grid.arrange(k_meansPLOT1, k_meansPLOT1, OddsPath_PLOT1,OddsPath_PLOT2,nrow = 2)
+    
+    #dev.off()
+    #
+    
+    
+    #output$NB_intro <- renderText({ "Naive Bayes Kappa with 3-fold CV:" })
+    #output$NB_cv <- renderText({ model$results$Kappa[1] })
+    output$RF_intro <- renderText({ "RF 3 fold CV error:" })
+    output$RF_cv <- renderText({ rf_cv$error.cv[1] })
+    
+    print('testing8') # troubleshooting
+    
+    #######################
+    #######################
+    #######################
+    
+    output$downloadData <- downloadHandler(
+      filename = function() {
+        paste("data-Metrics-", Sys.Date(), ".csv", sep="")
+      },
+      content = function(file) {
+        write.csv(big.coords_df, file)})
+    
+    output$downloadData2 <- downloadHandler(
+      filename = function() {
+        paste("data-VariantLevelTS-", Sys.Date(), ".csv", sep="")
+      },
+      content = function(file) {
+        write.csv(no_na_df, file)})
+    
+    output$downloadData3 <- downloadHandler(
+      filename = function() {
+        paste("data-VariantLevelALL-", Sys.Date(), ".csv", sep="")
+      },
+      content = function(file) {
+        write.csv(no_na_MAVEonly_df, file)})
+    
+    output$downloadData4 <- downloadHandler(
+      filename = function() {
+        paste("data-MetricsTrainingTestSplits-", Sys.Date(), ".csv", sep="")
+      },
+      content = function(file) {
+        write.csv(test_train_split_metrics, file)})
+    
+    output$downloadPlot <- downloadHandler(
+        #svglite(filename = "test.svg", width = 10, height = 8,
+        #        bg = "white", pointsize = 12, scaling = 1)
+        
+        filename = function(){paste("outputPlotsPC",Sys.Date(),'.svg',sep='')},
+        content = function(file){
+          ggsave(file,plot=grid.arrange(k_meansPLOT1, k_meansPLOT1,nrow = 2,heights=c(4,4),widths=c(4)),width=12,height=10,dpi=300,units=c("in"))
+      }
+    )
+    
+    output$downloadPlot2 <- downloadHandler(
+      #svglite(filename = "test.svg", width = 10, height = 8,
+      #        bg = "white", pointsize = 12, scaling = 1)
+      
+      filename = function(){paste("outputPlotsOddsPath",Sys.Date(),'.svg',sep='')},
+      content = function(file){
+        ggsave(file,plot=grid.arrange(OddsPath_PLOT1,OddsPath_PLOT2,nrow = 2,heights=c(2,2)),width=8,height=10,dpi=300,units=c("in"))
+      }
+    )
+    
+    output$downloadPlot3 <- downloadHandler(
+      #svglite(filename = "test.svg", width = 10, height = 8,
+      #        bg = "white", pointsize = 12, scaling = 1)
+      
+      filename = function(){paste("outputPlotsROCcurve",Sys.Date(),'.svg',sep='')},
+      content = function(file){
+        ggsave(file,plot=ROCall,width=8,height=8,dpi=300,units=c("in"))
+      }
+    )
+  })
+
+}
+
+# Create Shiny app ----
+shinyApp(ui, server)
