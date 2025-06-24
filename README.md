@@ -1,14 +1,16 @@
 # 2025-calhoun_et_al
 Shinyapp code to combine maves and make figures similar to those in the paper titled "Combining multiplexed functional data to improve variant classification" Preprint: https://arxiv.org/abs/2503.18810v1
 
+## Before use, please read this important note:  
+This tool is only suitable for genes with a known loss-of-function mechanism. As such it uses synonymous and premature termination codon variants as a training set. This preserves the full clinical truth set as a test dataset. However, this implementation does come with the trade-off that a suitable number of synonymous and premature termination codon variants need to present in each individual MAVE dataset.
 
-Instructions to use the Shiny app
+## Instructions to use the Shiny app
 
 This app will integrate two or more MAVE datasets for a single gene. You will need to prepare the input files according to these instructions:
 
 1: Each MAVE dataset will need its own csv file with two columns. One column must be named 'hgvs_pro', and each row of this column will need to have a unique variant. The other column should have a single score generated from the MAVE.
 
-2: A truth set is also necessary input. This is a three column csv file. One column needs to be a variant column called 'hgvs_pro' as this facilitates merging all of the dataframes. Again, like above, each row of this column should contain a unique variant. The second column needs to be called 'binary_clinvar_class', with benign or likely benign variants coded as 'B' and pathogenic or likely pathogenic variants coded as 'P'. The third column must be 'SYNorPTC' where synonymous variants are coded 'SYN' and premature truncation codon variants are coded 'PTC'. IMPORTANT: It is necessary that synonymous variants are also coded as 'B' in the 'binary_clinvar_class' column.  
+2: A truth set is also necessary input. This is a three column csv file. One column needs to be a variant column called 'hgvs_pro' as this facilitates merging all of the dataframes. Again, like above, each row of this column should contain a unique variant. The second column needs to be called 'binary_clinvar_class', with benign or likely benign variants coded as 'B' and pathogenic or likely pathogenic variants coded as 'P'. The third column must be 'SYNorPTC' where synonymous variants are coded 'SYN' and premature truncation codon variants are coded 'PTC'. It is necessary that synonymous variants are also coded as 'B' in the 'binary_clinvar_class' column.  IMPORTANT: It will likely be necessary to exclude some PTC variants depending on their location within the gene and the context of the assay. For cDNA assays, the C-terminal end of some proteins is dispensable for function and stability, so it may be worthwhile to exclude any variants in this region of the gene (pro tip: scrolling through heatmaps provided on MAVEdb can help sort this out). For endogenous assays, the same principal applies, with the added potential complication of nonsense-mediated decay. Any PTC variants lying in the last exon or the final 50 bp of the penultimate exon should be excluded. Finally, it may be necessary to exclude a small number of synonymous variants if they are predicted to impact splicing. Variant effect predictors tailored to splicing such as SpliceAI may be useful here.   
 
 Please note there are example files you can view to make sure you follow the correct formatting (see below for more detail). Once the input files are ready, simply navigate to our current stable release of the Shiny app at https://calhoujd12.shinyapps.io/AVE_shinyApp_Jun2025_v2p2/.
 
@@ -26,27 +28,27 @@ Next, click the analysis button at the bottom of the side panel to generate plot
 
 We have files that can be downloaded from Github that can be used as examples.
 
-Gene1: TP53  
+## Gene1: TP53  
 Number of MAVE datasets: Up to 4  
 File names: Giacomelli_NULLetoposide.csv, Giacomelli_NULLnutlin.csv,Giacomelli_WTnutlin.csv,FunkTP53_wSYNandPTC_NOdups.csv  
 Number of truth sets: 1  
 Truth set name: TP53_TS2wSYNandPTC_23jun2025.csv  
   
-Gene2: PTEN  
+## Gene2: PTEN  
 Number of MAVE datasets: 2  
 MAVE dataset file names: PTEN_abundanceVAMPseq_wSynANDptc.csv, PTEN_fitness_wSynANDptc.csv  
 Number of truth sets: 1  
 Truth set name: PTEN_TS_wSynANDptc.csv  
 
-How does the app work?  
+# How does the app work?  
 
 Our code is shared, so you can investigate for yourself! Briefly, all of the individual dataframes are merged. We plot the data in principal component space (PC1 & PC2) for visual representation. The synonymous (SYN) and premature termination codon (PTC) are used to train the Naive bayes and random forest classifiers. The manually set threshold is used to evaluate the classification of variants in the clinical truth set. Lastly, we calculate OddsPath Normal and OddsPath Abnormal based on the threshold which best separates benign and pathogenic variants for each input MAVE, principal component 1, the Naive Bayes model, or the random forest model.  
 
-Future directions:  
+# Future directions:  
 
 We hope to continue to maintain this app and add additional functionality over time! Please message us if there is something you would like added and we will try to incorporate in the next update. One thing that is we are considering is either within this app or as a separate app, a functionality based on increasing the number of variants receiving a score. Also, we would like to add support for 'c.' variant naming as an alternative option to 'p.' naming.  
 
-References
+# References
 
 Three of the TP53 example MAVE datasets come from this paper:  
 Giacomelli AO, Yang X, Lintner RE, McFarland JM, Duby M, Kim J, Howard TP, Takeda DY, Ly SH, Kim E, Gannon HS, Hurhula B, Sharpe T, Goodale A, Fritchman B, Steelman S, Vazquez F, Tsherniak A, Aguirre AJ, Doench JG, Piccioni F, Roberts CWM, Meyerson M, Getz G, Johannessen CM, Root DE, Hahn WC. Mutational processes shape the landscape of TP53 mutations in human cancer. Nat Genet. 2018 Oct;50(10):1381-1387. doi: 10.1038/s41588-018-0204-y. Epub 2018 Sep 17. PMID: 30224644; PMCID: PMC6168352.
