@@ -48,18 +48,16 @@ Our code is shared, so you can investigate for yourself! Briefly, all of the ind
 
 # Future directions:  
 
-We hope to continue to maintain this app and add additional functionality over time! Please message us if there is something you would like added and we will try to incorporate in the next update. One thing that is we are considering is either within this app or as a separate app, a functionality based on increasing the number of variants receiving a score. Also, we would like to add support for 'c.' variant naming as an alternative option to 'p.' naming.  
+We hope to continue to maintain this app and add additional functionality over time! Please message us if there is something you would like added and we will try to incorporate in the next update. One thing that is we are considering is either within this app or as a separate app, a functionality based on increasing the number of variants receiving a score. Also, we would like to add support for 'c.' variant naming as an alternative option to 'p.' naming.  We would like to continue populating this Github with additional examples, if you have an example you would like to add, please contact us.
 
-# References
+# References  
 
-Three of the TP53 example MAVE datasets come from this paper:  
-Giacomelli AO, Yang X, Lintner RE, McFarland JM, Duby M, Kim J, Howard TP, Takeda DY, Ly SH, Kim E, Gannon HS, Hurhula B, Sharpe T, Goodale A, Fritchman B, Steelman S, Vazquez F, Tsherniak A, Aguirre AJ, Doench JG, Piccioni F, Roberts CWM, Meyerson M, Getz G, Johannessen CM, Root DE, Hahn WC. Mutational processes shape the landscape of TP53 mutations in human cancer. Nat Genet. 2018 Oct;50(10):1381-1387. doi: 10.1038/s41588-018-0204-y. Epub 2018 Sep 17. PMID: 30224644; PMCID: PMC6168352.
+LDLR example MAVE datasets come from the following paper:  
 
-The other twp TP53 example MAVE datasets are from these two papers:  
-Funk JS, Klimovich M, Drangenstein D, Pielhoop O, Hunold P, Borowek A, Noeparast M, Pavlakis E, Neumann M, Balourdas DI, Kochhan K, Merle N, Bullwinkel I, Wanzel M, Elmshäuser S, Teply-Szymanski J, Nist A, Procida T, Bartkuhn M, Humpert K, Mernberger M, Savai R, Soussi T, Joerger AC, Stiewe T. Deep CRISPR mutagenesis characterizes the functional diversity of TP53 mutations. Nat Genet. 2025 Jan;57(1):140-153. doi: 10.1038/s41588-024-02039-4. Epub 2025 Jan 7. PMID: 39774325; PMCID: PMC11735402. 
+Tabet DR, Coté AG, Lancaster MC, Weile J, Rayhan A, Fotiadou I, Kishore N, Li R, Kuang D, Knapp JJ, Carrero CS, Taverniti O, Axakova A, Castelli JMP, Islam MM, Sowlati-Hashjin S, Gandhi A, Maaieh R, Garton M, Matreyek K, Fowler DM, Bourbon M, Pfisterer SG, Glazer AM, Kroncke BM, Parikh VN, Ashley EA, Knowles JW, Claussnitzer M, Cirulli ET, Hegele RA, Roden DM, MacRae CA, Roth FP. The functional landscape of coding variation in the familial hypercholesterolemia gene LDLR. Science. 2025 Oct 30:eady7186. doi: 10.1126/science.ady7186. Epub ahead of print. PMID: 41166440.
 
-Boettcher S, Miller PG, Sharma R, McConkey M, Leventhal M, Krivtsov AV, Giacomelli AO, Wong W, Kim J, Chao S, Kurppa KJ, Yang X, Milenkowic K, Piccioni F, Root DE, Rücker FG, Flamand Y, Neuberg D, Lindsley RC, Jänne PA, Hahn WC, Jacks T, Döhner H, Armstrong SA, Ebert BL. A dominant-negative effect drives selection of TP53 missense mutations in myeloid malignancies. Science. 2019 Aug 9;365(6453):599-604. doi: 10.1126/science.aax3649. PMID: 31395785; PMCID: PMC7327437.    
-
+  
+  
 PTEN example MAVE datasets come from the following papers:  
 
 Matreyek KA, Starita LM, Stephany JJ, Martin B, Chiasson MA, Gray VE, Kircher M, Khechaduri A, Dines JN, Hause RJ, Bhatia S, Evans WE, Relling MV, Yang W, Shendure J, Fowler DM. Multiplex assessment of protein variant abundance by massively parallel sequencing. Nat Genet. 2018 Jun;50(6):874-882. doi: 10.1038/s41588-018-0122-z. Epub 2018 May 21. PMID: 29785012; PMCID: PMC5980760.
@@ -68,3 +66,11 @@ Mighell TL, Evans-Dutson S, O'Roak BJ. A Saturation Mutagenesis Approach to Unde
 
 Mighell TL, Thacker S, Fombonne E, Eng C, O'Roak BJ. An Integrated Deep-Mutational-Scanning Approach Provides Clinical Insights on PTEN Genotype-Phenotype Relationships. Am J Hum Genet. 2020 Jun 4;106(6):818-829. doi: 10.1016/j.ajhg.2020.04.014. Epub 2020 May 21. PMID: 32442409; PMCID: PMC7273526.
 
+  
+Three of the TP53 example MAVE datasets come from this paper:  
+Giacomelli AO, Yang X, Lintner RE, McFarland JM, Duby M, Kim J, Howard TP, Takeda DY, Ly SH, Kim E, Gannon HS, Hurhula B, Sharpe T, Goodale A, Fritchman B, Steelman S, Vazquez F, Tsherniak A, Aguirre AJ, Doench JG, Piccioni F, Roberts CWM, Meyerson M, Getz G, Johannessen CM, Root DE, Hahn WC. Mutational processes shape the landscape of TP53 mutations in human cancer. Nat Genet. 2018 Oct;50(10):1381-1387. doi: 10.1038/s41588-018-0204-y. Epub 2018 Sep 17. PMID: 30224644; PMCID: PMC6168352.
+
+The other twp TP53 example MAVE datasets are from these two papers:  
+Funk JS, Klimovich M, Drangenstein D, Pielhoop O, Hunold P, Borowek A, Noeparast M, Pavlakis E, Neumann M, Balourdas DI, Kochhan K, Merle N, Bullwinkel I, Wanzel M, Elmshäuser S, Teply-Szymanski J, Nist A, Procida T, Bartkuhn M, Humpert K, Mernberger M, Savai R, Soussi T, Joerger AC, Stiewe T. Deep CRISPR mutagenesis characterizes the functional diversity of TP53 mutations. Nat Genet. 2025 Jan;57(1):140-153. doi: 10.1038/s41588-024-02039-4. Epub 2025 Jan 7. PMID: 39774325; PMCID: PMC11735402. 
+
+Boettcher S, Miller PG, Sharma R, McConkey M, Leventhal M, Krivtsov AV, Giacomelli AO, Wong W, Kim J, Chao S, Kurppa KJ, Yang X, Milenkowic K, Piccioni F, Root DE, Rücker FG, Flamand Y, Neuberg D, Lindsley RC, Jänne PA, Hahn WC, Jacks T, Döhner H, Armstrong SA, Ebert BL. A dominant-negative effect drives selection of TP53 missense mutations in myeloid malignancies. Science. 2019 Aug 9;365(6453):599-604. doi: 10.1126/science.aax3649. PMID: 31395785; PMCID: PMC7327437.
