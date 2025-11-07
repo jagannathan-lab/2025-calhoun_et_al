@@ -30,17 +30,23 @@ Next, click the analysis button at the bottom of the side panel to generate plot
 
 We have files that can be downloaded from Github that can be used as examples.
 
-## Gene1: TP53  
-Number of MAVE datasets: Up to 5  
-File names: Giacomelli_NULLetoposide.csv, Giacomelli_NULLnutlin.csv,Giacomelli_WTnutlin.csv,FunkTP53_wSYNandPTC_NOdups.csv, Boettcher_DNreporter  
+## Gene1: LDLR  
+Number of MAVE datasets: 2  
+File names: LDLR_func_noVLDL_forShinyApp.csv, LDLR_surfaceAbundance_forShinyApp.csv  
 Number of truth sets: 1  
-Truth set name: TP53_TS2wSYNandPTC_23jun2025.csv  
+Truth set name: LDLR_TS_wSYNandPTC.csv  
   
 ## Gene2: PTEN  
 Number of MAVE datasets: 2  
 MAVE dataset file names: PTEN_abundanceVAMPseq_wSynANDptc.csv, PTEN_fitness_wSynANDptc.csv  
 Number of truth sets: 1  
 Truth set name: PTEN_TS_wSynANDptc.csv  
+
+## Gene3: TP53  
+Number of MAVE datasets: Up to 5  
+File names: Giacomelli_NULLetoposide.csv, Giacomelli_NULLnutlin.csv,Giacomelli_WTnutlin.csv,FunkTP53_wSYNandPTC_NOdups.csv, Boettcher_DNreporter.csv  
+Number of truth sets: 1  
+Truth set name: TP53_TS2wSYNandPTC_23jun2025.csv  
 
 # How does the app work?  
 
