@@ -1,0 +1,782 @@
+library(shiny)
+library(bslib)
+library(dplyr)
+library(pROC)
+library(ggplot2)
+library(ggbiplot)
+library(svglite)
+library(tidyr)
+library(bio3d)
+library(naivebayes)
+library(randomForest)
+library(caret)
+library(purrr)
+library(tidyverse)
+library("klaR")
+library(gridExtra)
+library(ggridges)
+library(patchwork)
+library(RColorBrewer)
+
+ui <- fluidPage(
+  titlePanel("Integrate multiple MAVE datasets with sample methods | current version 2.99"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      
+      fileInput("files", "Choose MAVE csv files | Multiple MAVE datasets, same gene",
+                multiple = TRUE, accept = c(".csv")),
+      fileInput("files2", "Choose Truth Set csv file for gene of interest",
+                multiple = FALSE, accept = c(".csv")),
+      
+      hr(),
+      
+      numericInput("whatSeed", label = h6("What seed to set for reproducibility? default=1234"), value = 1234),
+      numericInput("num",  label = h6("How many clusters for k-means? default=2"), value = 2),
+      numericInput("num2", label = h6("How many random sets for k-means? default=20"), value = 20),
+      
+      # ── SYN/PTC toggle ───────────────────────────────────────────────────────
+      checkboxInput("useSYNPTC",
+                    "Include SYN/PTC control variants in training?",
+                    value = TRUE),
+      
+      # Controls that only make sense when SYN/PTC is enabled
+      conditionalPanel(
+        condition = "input.useSYNPTC == true",
+        sliderInput("num6",
+                    label = h6("What percent of SYN and PTC variants to include in training data? cannot be 0. default=1.0"),
+                    min = 0.01, max = 1, value = 1),
+        helpText(tags$small(
+          "Note: when SYN/PTC are included your Truth Set CSV must have a ",
+          code("SYNorPTC"), " column with values 'SYN' or 'PTC', and those rows ",
+          "should also be labelled 'B' / 'P' respectively in ",
+          code("binary_clinvar_class"), "."
+        ))
+      ),
+      # ─────────────────────────────────────────────────────────────────────────
+      
+      sliderInput("num3",
+                  label = h6("What percent of missense variants for training (0.1-0.8) to supplement SYN/PTC? default=0.5"),
+                  min = 0.1, max = 0.8, value = 0.5),
+      
+      # ── Naive bayes toggle ───────────────────────────────────────────────────────
+      checkboxInput("useCustomNB",
+                    "Use custom Naive bayes implementation? (default=3-fold CV)",
+                    value = TRUE),
+      
+      # Controls that only make sense when SYN/PTC is enabled
+      conditionalPanel(
+        condition = "input.useCustomNB == true",
+        radioButtons("rbNB", "3-fold CV or LOOCV?",
+                     choiceNames = list("3-fold CV", "LOOCV"),
+                     choiceValues = list("3-fold CV", "LOOCV")),
+        #helpText(tags$small(
+        #  "Note: when SYN/PTC are included your Truth Set CSV must have a ",
+        #  code("SYNorPTC"), " column with values 'SYN' or 'PTC', and those rows ",
+        #  "should also be labelled 'B' / 'P' respectively in ",
+        #  code("binary_clinvar_class"), "."
+        #))
+      ),
+      # ─────────────────────────────────────────────────────────────────────────
+      
+      # ── random forest toggle ───────────────────────────────────────────────────────
+      checkboxInput("useCustomRF",
+                    "Use custom random forest implementation? (default=3-fold CV, 5 trees, default hyperparameters)",
+                    value = TRUE),
+      
+      # Controls that only make sense when SYN/PTC is enabled
+      conditionalPanel(
+        condition = "input.useCustomRF == true",
+        radioButtons("rbRF", "3-fold CV or LOOCV?",
+                     choiceNames = list("3-fold CV", "LOOCV"),
+                     choiceValues = list("3-fold CV", "LOOCV")),
+        numericInput("num4", label = h6("How many trees for random forest? default=5"), value = 5),
+        #helpText(tags$small(
+        #  "Note: when SYN/PTC are included your Truth Set CSV must have a ",
+        #  code("SYNorPTC"), " column with values 'SYN' or 'PTC', and those rows ",
+        #  "should also be labelled 'B' / 'P' respectively in ",
+        #  code("binary_clinvar_class"), "."
+        #))
+      ),
+      # ─────────────────────────────────────────────────────────────────────────
+      
+      # ── Defauly or custom threshold toggle ───────────────────────────────────────────────────────
+      checkboxInput("useCustomThresholds",
+                    "Use custom thresholds for evaluating model performance?  (default 'Best' (Youden statistic))",
+                    value = TRUE),
+      
+      # Controls that only make sense when SYN/PTC is enabled
+      conditionalPanel(
+        condition = "input.useCustomThresholds == true",
+        sliderInput("num9",
+                    label = h6("Percentile-based threshold for PCA (PC1)? Set between 0.1 and 0.9. default=0.5"),
+                    min = 0.1, max = 0.9, value = 0.5),
+        sliderInput("num5",
+                    label = h6("Threshold for Naive Bayes pathogenicity? Set between 0 and 1. default=0.5"),
+                    min = 0.05, max = 0.95, value = 0.5),
+        sliderInput("num7",
+                    label = h6("Threshold for random forest pathogenicity? Set between 0 and 1. default=0.5"),
+                    min = 0.05, max = 0.95, value = 0.5),
+        helpText(tags$small(
+          "Note: when SYN/PTC are included your Truth Set CSV must have a ",
+          code("SYNorPTC"), " column with values 'SYN' or 'PTC', and those rows ",
+          "should also be labelled 'B' / 'P' respectively in ",
+          code("binary_clinvar_class"), "."
+        ))
+      ),
+      # ─────────────────────────────────────────────────────────────────────────
+      
+      
+      
+      hr(),
+      fluidPage(actionButton("do", "Click here to perform analysis"))
+    ),
+    
+    mainPanel(
+      tabsetPanel(id = "inTabset",
+                  
+                  tabPanel(title = "Instructions", value = "panel1",
+                           br(),
+                           tags$a(href = "https://github.com/jagannathan-lab/2025-calhoun_et_al",
+                                  "Click here to visit Github repository with example input files and detailed instructions!"),
+                           br(), br(),
+                           h3("Input Requirements"),
+                           
+                           h4("📁 MAVE CSV Files"),
+                           tags$ul(
+                             tags$li(strong("Format:"), "CSV files with variant effect scores. Each csv should be two columns only; each MAVE should have its own separate csv file."),
+                             tags$li(strong("Required Column:"), code("hgvs_pro"), "- variant identifier, ideally in p.REFposALT format. NOTE: THE FORMAT USED HERE MUST MATCH IN ALL INPUT CSV FILES"),
+                             tags$li(strong("Score Column:"), "Column containing the MAVE score."),
+                             tags$li(strong("Multiple Files:"), "Upload 2 or more MAVE datasets for the same gene")
+                           ),
+                           
+                           h4("📋 Truth Set CSV File"),
+                           tags$ul(
+                             tags$li(strong("Required Columns:")),
+                             tags$ul(
+                               tags$li(code("hgvs_pro"), "- variant identifier (must match MAVE files)"),
+                               tags$li(code("binary_clinvar_class"), "- 'P' (pathogenic) or 'B' (benign)"),
+                               tags$li(code("SYNorPTC"), "- 'SYN' or 'PTC' (", strong("only required when SYN/PTC training is enabled"), ")")
+                             )
+                           ),
+                           
+                           h4("⚙️ Workflow"),
+                           tags$ol(
+                             tags$li("Upload your MAVE CSV files"),
+                             tags$li("Upload your truth set CSV file"),
+                             tags$li("Choose whether to include SYN/PTC controls in training"),
+                             tags$li("Click 'Perform Analysis'"),
+                             tags$li("View results and download outputs")
+                           )
+                  ),
+                  
+                  tabPanel("Decision Tree",
+                           tags$img(style = "width:100%", src = "Fig2B.jpg")),
+                  
+                  tabPanel(title = "Analysis Results", value = "panel2",
+                           plotOutput('plot1'),
+                           plotOutput('plot6'),
+                           plotOutput('plot7'),
+                           plotOutput('plot2'),
+                           plotOutput('plot3'),
+                           plotOutput('plot4'),
+                           plotOutput('plot5'),
+                           textOutput("RF_intro"),
+                           textOutput("RF_cv"),
+                           uiOutput("loocv_text")
+                  ),
+                  
+                  tabPanel(title = "Downloads", value = "panel1",
+                           br(),
+                           h4("Download Results"), br(),
+                           fluidPage(downloadButton("downloadData",  "Download model metrics")), br(),
+                           fluidPage(downloadButton("downloadData2", "Download test set variant level dataframe")), br(),
+                           fluidPage(downloadButton("downloadData5", "Download full truth set variant level dataframe")), br(),
+                           fluidPage(downloadButton("downloadData3", "Download full variant level dataframe")), br(),
+                           fluidPage(downloadButton("downloadData4", "Download model metrics for training test split")), br(),
+                           fluidPage(downloadButton("downloadPlot",  "Download SVG of principal component plots")), br(),
+                           fluidPage(downloadButton("downloadPlot2", "Download SVG of OddsPath plots")), br(),
+                           fluidPage(downloadButton("downloadPlot3", "Download SVG of Ridgeline plots"))
+                  )
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  
+  observeEvent(input$do, {
+    updateTabsetPanel(session, "inTabset", selected = "panel2")
+  })
+  
+  observeEvent(input$do, {
+    
+    req(input$files)
+    req(input$files2)
+    
+    set.seed(input$whatSeed)
+    
+    # ── Read and merge MAVE files ────────────────────────────────────────────
+    lst <- lapply(seq_len(nrow(input$files)), function(i)
+      read.csv(input$files[[i, 'datapath']], sep = ","))
+    
+    truthSet_df <- read.csv(input$files2$datapath, sep = ",")
+    
+    mergedMAVE.data.frame <- lst %>% reduce(left_join, by = "hgvs_pro")
+    
+    # ── Scale MAVE scores ────────────────────────────────────────────────────
+    MAVE_data_beforeTSmerge_df <- mergedMAVE.data.frame
+    drops <- c("hgvs_pro")
+    mergedMAVE.data.frame <- mergedMAVE.data.frame[ , !(names(mergedMAVE.data.frame) %in% drops)]
+    mergedMAVE.data.frame <- as.data.frame(scale(mergedMAVE.data.frame))
+    mergedMAVE.data.frame$hgvs_pro <- as.factor(MAVE_data_beforeTSmerge_df$hgvs_pro)
+    
+    TSandMAVE_df <- merge(mergedMAVE.data.frame, truthSet_df, by = "hgvs_pro")
+    
+    # ── Build train / test splits ────────────────────────────────────────────
+    #
+    # When useSYNPTC = TRUE  → train on SYN+PTC (+ optional missense supplement)
+    # When useSYNPTC = FALSE → train on missense truth-set variants only
+    #
+    if (input$useSYNPTC) {
+      # --- original SYN/PTC path ---
+      train_df <- subset(TSandMAVE_df,
+                         TSandMAVE_df$SYNorPTC == 'SYN' | TSandMAVE_df$SYNorPTC == 'PTC')
+      synORptc_df <- train_df   # keep a copy for ridgeline plots
+      
+      if (input$num6 < 1) {
+        ind <- sample(seq_len(nrow(train_df)), replace = FALSE,
+                      size = round(input$num6 * nrow(train_df)))
+        train_df <- train_df[ind, ]
+      }
+      
+    } else {
+      # --- missense-only path ---
+      # All missense truth-set variants become the pool; we split them into
+      # train / test using the same num3 slider that controls the missense
+      # supplement fraction when SYN/PTC are included.
+      missense_pool <- subset(TSandMAVE_df,
+                              TSandMAVE_df$binary_clinvar_class == 'B' |
+                                TSandMAVE_df$binary_clinvar_class == 'P')
+      # Remove any residual SYN/PTC rows if the column exists
+      if ("SYNorPTC" %in% names(missense_pool)) {
+        missense_pool <- subset(missense_pool,
+                                missense_pool$SYNorPTC != 'SYN' &
+                                  missense_pool$SYNorPTC != 'PTC')
+      }
+      train_idx  <- sample(seq_len(nrow(missense_pool)), replace = FALSE,
+                           size = round(input$num3 * nrow(missense_pool)))
+      train_df   <- missense_pool[ train_idx, ]
+      synORptc_df <- NULL   # no SYN/PTC ridgeline data available
+    }
+    
+    # test set: missense truth-set variants not used in training
+    test_df <- subset(TSandMAVE_df,
+                      TSandMAVE_df$binary_clinvar_class == 'B' |
+                        TSandMAVE_df$binary_clinvar_class == 'P')
+    if ("SYNorPTC" %in% names(test_df)) {
+      test_df <- subset(test_df,
+                        test_df$SYNorPTC != 'SYN' & test_df$SYNorPTC != 'PTC')
+    }
+    # When using missense-only training, exclude the variants already in train_df
+    if (!input$useSYNPTC) {
+      test_df <- test_df[!test_df$hgvs_pro %in% train_df$hgvs_pro, ]
+    }
+    
+    # ── Drop NAs ─────────────────────────────────────────────────────────────
+    train_no_na_df    <- train_df %>% drop_na()
+    test_no_na_df     <- test_df  %>% drop_na()
+    no_na_MAVEonly_df <- mergedMAVE.data.frame %>% drop_na()
+    no_na_MAVEonly_df_copy <- no_na_MAVEonly_df
+    
+    drops <- c("SYNorPTC")
+    train_no_na_df2 <- train_no_na_df[ , !(names(train_no_na_df) %in% drops), drop = FALSE]
+    test_no_na_df2  <- test_no_na_df[  , !(names(test_no_na_df)  %in% drops), drop = FALSE]
+    no_na_MAVEonly_df2 <- no_na_MAVEonly_df[ , !(names(no_na_MAVEonly_df) %in% drops), drop = FALSE]
+    
+    drops <- c("binary_clinvar_class", "hgvs_pro")
+    train_no_na_df3    <- train_no_na_df2[  , !(names(train_no_na_df2)    %in% drops), drop = FALSE]
+    test_no_na_df3     <- test_no_na_df2[   , !(names(test_no_na_df2)     %in% drops), drop = FALSE]
+    no_na_MAVEonly_df3 <- no_na_MAVEonly_df2[, !(names(no_na_MAVEonly_df2) %in% drops), drop = FALSE]
+    
+    # ── PCA ──────────────────────────────────────────────────────────────────
+    trainANDtest_scaled <- rbind(train_no_na_df3, test_no_na_df3)
+    
+    plot_color_df <- as.data.frame(rbind(train_no_na_df, test_no_na_df))
+    colnames(plot_color_df) <- colnames(train_no_na_df)
+    if ("SYNorPTC" %in% names(plot_color_df)) {
+      plot_color_df$color <- plot_color_df$SYNorPTC
+      plot_color_df <- plot_color_df %>%
+        mutate(color = if_else(color != "SYN" & color != "PTC" & binary_clinvar_class == "B", 'B', color)) %>%
+        mutate(color = if_else(color != "SYN" & color != "PTC" & binary_clinvar_class == "P", 'P', color))
+    } else {
+      plot_color_df$color <- plot_color_df$binary_clinvar_class
+    }
+    
+    pc_train        <- prcomp(train_no_na_df3,    center = TRUE, scale. = TRUE)
+    pc_test         <- prcomp(test_no_na_df3,     center = TRUE, scale. = TRUE)
+    pc_MAVEonly     <- prcomp(no_na_MAVEonly_df3, center = TRUE, scale. = TRUE)
+    pc_trainANDtest <- prcomp(trainANDtest_scaled, center = TRUE, scale. = TRUE)
+    
+    train_no_na_df$PC1    <- pc_train$x[, 1]
+    test_no_na_df$PC1     <- pc_test$x[, 1]
+    no_na_MAVEonly_df$PC1 <- pc_MAVEonly$x[, 1]
+    
+    # ── K-means ───────────────────────────────────────────────────────────────
+    kCluster <- kmeans(no_na_MAVEonly_df3, input$num, nstart = input$num2)
+    kCluster$cluster <- as.factor(kCluster$cluster)
+    no_na_MAVEonly_df_copy$kMeansCluster <- kCluster$cluster
+    
+    kCluster <- kmeans(trainANDtest_scaled, input$num, nstart = input$num2)
+    kCluster$cluster <- as.factor(kCluster$cluster)
+    
+    k_meansPLOT2 <- ggbiplot(pc_trainANDtest, obs.scale = 1, var.scale = 1,
+                             groups = kCluster$cluster, ellipse = TRUE,
+                             ellipse.fill = FALSE, circle = FALSE, ellipse.prob = 0.68) +
+      scale_color_discrete(name = '') +
+      theme(legend.direction = 'horizontal', legend.position = 'top') +
+      ggtitle('Variants grouped by k-means clusters') +
+      scale_color_brewer(palette = "Set2") + scale_fill_brewer(palette = "Set2")
+    output$plot6 <- renderPlot({ k_meansPLOT2 })
+    
+    k_meansPLOT1 <- ggbiplot(pc_trainANDtest, obs.scale = 1, var.scale = 1,
+                             groups = plot_color_df$color, ellipse = TRUE,
+                             ellipse.fill = FALSE, circle = FALSE, ellipse.prob = 0.68) +
+      scale_color_discrete(name = '') +
+      theme(legend.direction = 'horizontal', legend.position = 'top') +
+      ggtitle('Variants grouped by class') +
+      scale_color_brewer(palette = "Set2")
+    output$plot1 <- renderPlot({ k_meansPLOT1 })
+    
+    # ── Naive Bayes ──────────────────────────────────────────────────────────
+    train_scaled_df2       <- train_no_na_df3
+    train_scaled_df2$class <- as.factor(train_no_na_df$binary_clinvar_class)
+    test_scaled_df2        <- test_no_na_df3
+    test_scaled_df2$class  <- as.factor(test_no_na_df$binary_clinvar_class)
+    
+    train_scaled_df2$PC1      <- pc_train$x[, 1]
+    test_scaled_df2$PC1       <- pc_test$x[, 1]
+    train_scaled_df2$hgvs_pro <- train_no_na_df$hgvs_pro
+    test_scaled_df2$hgvs_pro  <- test_no_na_df$hgvs_pro
+    
+    if (input$useSYNPTC) {
+      # supplement SYN/PTC training set with a fraction of missense variants
+      ind       <- sample(seq_len(nrow(test_scaled_df2)), replace = FALSE,
+                          size = round(input$num3 * nrow(test_scaled_df2)))
+      train_mis <- test_scaled_df2[ind,  ]
+      test_mis  <- test_scaled_df2[-ind, ]
+      train_misANDsynANDptc_df <- as.data.frame(rbind(train_scaled_df2, train_mis))
+    } else {
+      # missense-only: train_scaled_df2 already IS the training set; test is separate
+      train_mis                <- train_scaled_df2
+      test_mis                 <- test_scaled_df2
+      train_misANDsynANDptc_df <- train_scaled_df2
+    }
+    colnames(train_misANDsynANDptc_df) <- colnames(train_scaled_df2)
+    
+    drops <- c("PC1", "hgvs_pro")
+    train_noPC1_wClass  <- train_misANDsynANDptc_df[ , !(names(train_misANDsynANDptc_df) %in% drops)]
+    test_noPC1_wClass   <- test_mis[                 , !(names(test_mis)                  %in% drops)]
+    
+    drops <- c("class", "PC1", "hgvs_pro")
+    train_noClass_noPC1 <- train_misANDsynANDptc_df[ , !(names(train_misANDsynANDptc_df) %in% drops)]
+    test_noClass_noPC1  <- test_mis[                 , !(names(test_mis)                  %in% drops)]
+    
+    # Naive bayes model training ## original implementation
+    ### 3 fold cross validation #### now implementing LOOCV
+    if (input$useCustomNB == TRUE){
+      if (input$rbNB == "LOOCV") { 
+        model <- train(train_noClass_noPC1, train_misANDsynANDptc_df$class,
+                       'nb', trControl = trainControl(method = "LOOCV"))
+      }
+      else {
+        model <- train(train_noClass_noPC1, train_misANDsynANDptc_df$class,
+                       'nb', trControl = trainControl(method = 'cv', number = 3))
+      }
+    }
+    else{
+      model <- train(train_noClass_noPC1, train_misANDsynANDptc_df$class,
+                     'nb', trControl = trainControl(method = 'cv', number = 3))
+    }
+    
+    nb_model <- model
+    nb_loo_acc <- nb_model$results$Accuracy
+    
+    p1 <- predict(model, train_noClass_noPC1, type = 'prob')
+    train_noClass_df2        <- train_noClass_noPC1
+    train_noClass_df2$NBpred <- p1$B
+    
+    p2 <- predict(model, test_noClass_noPC1, type = 'prob')
+    test_noClass_df2        <- test_noClass_noPC1
+    test_noClass_df2$NBpred <- p2$B
+    
+    MAVEonly_scaled_df2       <- no_na_MAVEonly_df3
+    MAVEonly_scaled_df2$class <- as.factor(vector(mode = "character",
+                                                  length = nrow(MAVEonly_scaled_df2)))
+    p_all <- predict(model, MAVEonly_scaled_df2, type = 'prob')
+    no_na_MAVEonly_df$NBpred <- p_all
+    
+    # ── Random Forest ────────────────────────────────────────────────────────
+    
+    # Random forest model training ## original implementation
+    ### 3 fold cross validation #### now implementing LOOCV
+    ##### testing suggests LOOCV takes about 2.5 min to run
+    ###### lets give the option of LOOCV or 3-fold CV
+    
+    if (input$useCustomRF == TRUE) {
+      if (input$rbRF == "LOOCV") { 
+        model <- train(train_noClass_noPC1, train_misANDsynANDptc_df$class,
+                       'rf', ntree = input$num4, trControl = trainControl(method = "LOOCV"))
+      }
+      else {
+        model <- train(train_noClass_noPC1, train_misANDsynANDptc_df$class,
+                       'rf', ntree = input$num4, trControl = trainControl(method = "cv", number=3))
+      }
+    }
+    else {
+      model <- train(train_noClass_noPC1, train_misANDsynANDptc_df$class,
+                     'rf', ntree = 5, trControl = trainControl(method = "cv", number=3))
+    }
+    
+    rf_model <- model
+    rf_loo_acc <- rf_model$results$Accuracy
+    
+    pred_train_prob        <- predict(rf_model, newdata = train_noPC1_wClass, type = "prob")
+    train_noClass_df2$RFpred <- as.data.frame(pred_train_prob)$B
+    
+    pred_test_prob       <- predict(rf_model, newdata = test_noPC1_wClass, type = "prob")
+    test_noClass_df2$RFpred <- as.data.frame(pred_test_prob)$B
+    
+    predict_RFall    <- predict(rf_model, newdata = MAVEonly_scaled_df2, type = "prob")
+    no_na_MAVEonly_df$RFpred <- as.data.frame(predict_RFall)$P
+    
+    rf_cv <- rfcv(train_noClass_noPC1, train_misANDsynANDptc_df$class, cv.fold = 3, step = 0.5)
+    
+    # ── Assemble truth-set dataframe for ROC / OddsPath ──────────────────────
+    testONLYmis_df2 <- truthSet_df
+    if ("SYNorPTC" %in% names(testONLYmis_df2)) {
+      testONLYmis_df2 <- subset(testONLYmis_df2,
+                                testONLYmis_df2$SYNorPTC != 'PTC' &
+                                  testONLYmis_df2$SYNorPTC != 'SYN')
+    }
+    
+    test_noClass_df2$PC1      <- test_mis$PC1
+    test_noClass_df2_wHgvs    <- test_noClass_df2
+    test_noClass_df2_wHgvs$hgvs_pro <- test_mis$hgvs_pro
+    testONLYmis_df2annotated  <- merge(testONLYmis_df2, test_noClass_df2_wHgvs, by = "hgvs_pro")
+    
+    train_misANDsynANDptc_dfwscores          <- train_misANDsynANDptc_df
+    train_misANDsynANDptc_dfwscores$NBpred   <- train_noClass_df2$NBpred
+    train_misANDsynANDptc_dfwscores$RFpred   <- train_noClass_df2$RFpred
+    trainONLYmis_df1annotated <- merge(testONLYmis_df2, train_misANDsynANDptc_dfwscores, by = "hgvs_pro")
+    
+    drops <- c("class")
+    trainONLYmis_df2annotated <- trainONLYmis_df1annotated[ , !(names(trainONLYmis_df1annotated) %in% drops)]
+    
+    truthSet_forROCandOddsPath_df <- as.data.frame(rbind(trainONLYmis_df2annotated,
+                                                         testONLYmis_df2annotated))
+    
+    drops <- c("binary_clinvar_class", "SYNorPTC", "hgvs_pro")
+    truthSet_forROCandOddsPath_df2 <- truthSet_forROCandOddsPath_df[
+      , !(names(truthSet_forROCandOddsPath_df) %in% drops)]
+    
+    test_df_subset      <- test_noClass_df2
+    test_df_subset$PC1  <- test_mis$PC1
+    
+    train_noClass_df2$PC1 <- train_misANDsynANDptc_df$PC1
+    
+    # ── ROC loop ─────────────────────────────────────────────────────────────
+    ROC_firstCol <- roc(as.factor(truthSet_forROCandOddsPath_df$binary_clinvar_class),
+                        truthSet_forROCandOddsPath_df2[[1]], direction = ">")
+    my.coords    <- coords(ROC_firstCol, "best", ret = "all", transpose = FALSE)
+    
+    big.coords_df <- data.frame(matrix(ncol = 25, nrow = length(colnames(truthSet_forROCandOddsPath_df2))))
+    colnames(big.coords_df) <- c(colnames(my.coords), 'ROC_AUC')
+    rownames(big.coords_df) <- colnames(test_df_subset)
+    
+    if (input$useCustomThresholds != TRUE) {
+      for (i in colnames(truthSet_forROCandOddsPath_df2)) {
+        ROC_loop      <- roc(as.factor(truthSet_forROCandOddsPath_df$binary_clinvar_class),
+                             truthSet_forROCandOddsPath_df2[[i]])
+        AUC_loop      <- auc(ROC_loop)
+        my.coords_loop <- coords(ROC_loop, "best", ret = "all", transpose = FALSE)
+        big.coords_df[i, ]    <- my.coords_loop
+        big.coords_df[i, 25]  <- AUC_loop
+        if (i == 'PC1')    PC1_threshold <- as.numeric(unname(my.coords_loop[1]))
+        if (i == 'NBpred') NB_threshold  <- as.numeric(unname(my.coords_loop[1]))
+        if (i == 'RFpred') RF_threshold  <- as.numeric(unname(my.coords_loop[1]))
+      }
+    }
+    
+    if (input$useCustomThresholds == TRUE) {
+      # come back and fix this
+      PC1_threshold <- input$num9
+      NB_threshold <- input$num5
+      RF_threshold <- input$num7
+      for (i in colnames(truthSet_forROCandOddsPath_df2)) {
+        ROC_loop       <- roc(as.factor(truthSet_forROCandOddsPath_df$binary_clinvar_class),
+                              truthSet_forROCandOddsPath_df2[[i]], direction = ">")
+        AUC_loop       <- auc(ROC_loop)
+        my.coords_loop <- coords(ROC_loop, "best", ret = "all", transpose = FALSE)
+        if (i == 'PC1')
+          my.coords_loop <- coords(ROC_loop,
+                                   as.numeric(unname(quantile(truthSet_forROCandOddsPath_df$PC1,
+                                                              input$num9))),
+                                   ret = "all", transpose = FALSE)
+        if (i == 'NBpred')
+          my.coords_loop <- coords(ROC_loop, NB_threshold, ret = "all", transpose = FALSE)
+        if (i == 'RFpred')
+          my.coords_loop <- coords(ROC_loop, RF_threshold, ret = "all", transpose = FALSE)
+        big.coords_df[i, ]   <- my.coords_loop
+        big.coords_df[i, 25] <- AUC_loop
+      }
+    }
+    
+    # ── Train / test split metrics ────────────────────────────────────────────
+    test_noClass_df2_wClassAdded                      <- test_noClass_df2
+    test_noClass_df2_wClassAdded$binary_clinvar_class <- test_noPC1_wClass$class
+    train_misANDsynANDptc_dfwscores$binary_clinvar_class <- train_noPC1_wClass$class
+    
+    ROC_NB_train       <- roc(as.factor(trainONLYmis_df2annotated$binary_clinvar_class),
+                              as.numeric(trainONLYmis_df2annotated$NBpred), direction = ">")
+    AUC_NB_train       <- auc(ROC_NB_train)
+    my.coords_NB_train <- as.data.frame(coords(ROC_NB_train, as.numeric(NB_threshold),
+                                               ret = "all", transpose = FALSE))
+    my.coords_NB_train$ROC_AUC <- AUC_NB_train
+    
+    ROC_NB_test       <- roc(as.factor(test_noClass_df2_wClassAdded$binary_clinvar_class),
+                             as.numeric(test_noClass_df2_wClassAdded$NBpred), direction = ">")
+    AUC_NB_test       <- auc(ROC_NB_test)
+    my.coords_NB_test <- as.data.frame(coords(ROC_NB_test, as.numeric(NB_threshold),
+                                              ret = "all", transpose = FALSE))
+    my.coords_NB_test$ROC_AUC <- AUC_NB_test
+    
+    ROC_RF_train       <- roc(as.factor(trainONLYmis_df2annotated$binary_clinvar_class),
+                              as.numeric(trainONLYmis_df2annotated$RFpred), direction = ">")
+    AUC_RF_train       <- auc(ROC_RF_train)
+    my.coords_RF_train <- as.data.frame(coords(ROC_RF_train, as.numeric(RF_threshold),
+                                               ret = "all", transpose = FALSE))
+    my.coords_RF_train$ROC_AUC <- AUC_RF_train
+    
+    ROC_RF_test       <- roc(as.factor(test_noClass_df2_wClassAdded$binary_clinvar_class),
+                             as.numeric(test_noClass_df2_wClassAdded$RFpred), direction = ">")
+    AUC_RF_test       <- auc(ROC_RF_test)
+    my.coords_RF_test <- as.data.frame(coords(ROC_RF_test, as.numeric(RF_threshold),
+                                              ret = "all", transpose = FALSE))
+    my.coords_RF_test$ROC_AUC <- AUC_RF_test
+    
+    test_train_split_metrics <- as.data.frame(rbind(my.coords_NB_train, my.coords_NB_test,
+                                                    my.coords_RF_train, my.coords_RF_test))
+    rownames(test_train_split_metrics) <- c("NB_train", "NB_test", "RF_train", "RF_test")
+    
+    # ── OddsPath ─────────────────────────────────────────────────────────────
+    path_count   <- length(which(truthSet_forROCandOddsPath_df$binary_clinvar_class == "P"))
+    benign_count <- length(which(truthSet_forROCandOddsPath_df$binary_clinvar_class == "B"))
+    total_controls    <- path_count + benign_count
+    prior_prob_path   <- path_count   / total_controls
+    prior_prob_benign <- benign_count / total_controls
+    
+    oddsPath_path_vec   <- c()
+    oddsPath_benign_vec <- c()
+    counter <- 1
+    
+    for (i in colnames(truthSet_forROCandOddsPath_df2)) {
+      TotalAssayAbnormal  <- big.coords_df$tp[counter] + big.coords_df$fp[counter] + 1
+      TotalAssayNormal    <- big.coords_df$tn[counter] + big.coords_df$fn[counter]
+      TruePathInAbnormal  <- big.coords_df$tp[counter]
+      TruePathInNormal    <- big.coords_df$fn[counter] + 1
+      
+      ProportionPathInAbnormal <- TruePathInAbnormal / TotalAssayAbnormal
+      ProportionPathInNormal   <- TruePathInNormal   / TotalAssayNormal
+      
+      oddsPath_path_vec[counter]   <- (ProportionPathInAbnormal * (1 - prior_prob_path)) /
+        ((1 - ProportionPathInAbnormal) * prior_prob_path)
+      oddsPath_benign_vec[counter] <- (ProportionPathInNormal * (1 - prior_prob_path)) /
+        ((1 - ProportionPathInNormal) * prior_prob_path)
+      counter <- counter + 1
+    }
+    
+    big.coords_df$OddsPath_path   <- oddsPath_path_vec
+    big.coords_df$OddsPath_benign <- oddsPath_benign_vec
+    
+    no_na_MAVEonly_df$kmeans <- no_na_MAVEonly_df_copy$kMeansCluster
+    
+    # ── Ridgeline plots ───────────────────────────────────────────────────────
+    # PC1 and NB/RF ridgelines for the ClinVar truth set (always shown)
+    histo_PC1_MisTSplot <- ggplot(truthSet_forROCandOddsPath_df,
+                                  aes(x = PC1, y = as.factor(binary_clinvar_class),
+                                      fill = as.factor(binary_clinvar_class))) +
+      geom_density_ridges() + labs(title = 'PC1 Ridgeline Plot | Clinvar Truth Set') +
+      theme_ridges() + geom_vline(xintercept = NB_threshold, linetype = "dotted",
+                                  color = "blue", size = 1.5) +
+      theme(legend.position = "none") + ylab('class') +
+      scale_fill_manual(values = c("#8856a7", "#99d8c9"))
+    
+    histo_NB_MisTSplot <- ggplot(truthSet_forROCandOddsPath_df,
+                                 aes(x = NBpred, y = as.factor(binary_clinvar_class),
+                                     fill = as.factor(binary_clinvar_class))) +
+      geom_density_ridges() + labs(title = 'Naive Bayes Ridgeline Plot | Clinvar Truth Set') +
+      theme_ridges() + geom_vline(xintercept = NB_threshold, linetype = "dotted",
+                                  color = "blue", size = 1.5) +
+      theme(legend.position = "none") + ylab('class') +
+      scale_fill_manual(values = c("#8856a7", "#99d8c9"))
+    
+    histo_RF_MisTSplot <- ggplot(truthSet_forROCandOddsPath_df,
+                                 aes(x = RFpred, y = as.factor(binary_clinvar_class),
+                                     fill = as.factor(binary_clinvar_class))) +
+      geom_density_ridges() + labs(title = 'Random Forest Ridgeline Plot | Clinvar Truth Set') +
+      theme_ridges() + geom_vline(xintercept = RF_threshold, linetype = "dotted",
+                                  color = "blue", size = 1.5) +
+      theme(legend.position = "none") + ylab('class') +
+      scale_fill_manual(values = c("#8856a7", "#99d8c9"))
+    
+    # SYN/PTC ridgelines only when that option is enabled
+    if (input$useSYNPTC && !is.null(synORptc_df)) {
+      synORptc_df_annotated <- merge(synORptc_df, no_na_MAVEonly_df, by = 'hgvs_pro')
+      
+      histo_PC1_SYNorPTCplot <- ggplot(synORptc_df_annotated,
+                                       aes(x = PC1, y = as.factor(binary_clinvar_class),
+                                           fill = as.factor(binary_clinvar_class))) +
+        geom_density_ridges() + labs(title = 'PC1 Ridgeline Plot | SYN or PTC') +
+        theme_ridges() + geom_vline(xintercept = NB_threshold, linetype = "dotted",
+                                    color = "blue", size = 1.5) +
+        theme(legend.position = "none") + ylab('class') +
+        scale_fill_manual(values = c("#8856a7", "#99d8c9"))
+      
+      histo_NB_SYNorPTCplot <- ggplot(synORptc_df_annotated,
+                                      aes(x = NBpred$P, y = as.factor(binary_clinvar_class),
+                                          fill = as.factor(binary_clinvar_class))) +
+        geom_density_ridges() + labs(title = 'Naive Bayes Ridgeline Plot | SYN or PTC') +
+        theme_ridges() + geom_vline(xintercept = NB_threshold, linetype = "dotted",
+                                    color = "blue", size = 1.5) +
+        theme(legend.position = "none") + ylab('class') +
+        scale_fill_manual(values = c("#8856a7", "#99d8c9"))
+      
+      histo_RF_SYNorPTCplot <- ggplot(synORptc_df_annotated,
+                                      aes(x = RFpred, y = as.factor(binary_clinvar_class),
+                                          fill = as.factor(binary_clinvar_class))) +
+        geom_density_ridges() + labs(title = 'Random Forest Ridgeline Plot | SYN or PTC') +
+        theme_ridges() + geom_vline(xintercept = RF_threshold, linetype = "dotted",
+                                    color = "blue", size = 1.5) +
+        theme(legend.position = "none") + ylab('class') +
+        scale_fill_manual(values = c("#8856a7", "#99d8c9"))
+      
+      histogramPLOT3 <- histo_PC1_SYNorPTCplot  + histo_PC1_MisTSplot + plot_layout(ncol = 1)
+      histogramPLOT1 <- histo_NB_SYNorPTCplot   + histo_NB_MisTSplot  + plot_layout(ncol = 1)
+      histogramPLOT2 <- histo_RF_SYNorPTCplot   + histo_RF_MisTSplot  + plot_layout(ncol = 1)
+      
+    } else {
+      # No SYN/PTC: show only the truth-set panels
+      histogramPLOT3 <- histo_PC1_MisTSplot
+      histogramPLOT1 <- histo_NB_MisTSplot
+      histogramPLOT2 <- histo_RF_MisTSplot
+    }
+    
+    output$plot7 <- renderPlot({ histogramPLOT3 })
+    output$plot2 <- renderPlot({ histogramPLOT1 })
+    output$plot3 <- renderPlot({ histogramPLOT2 })
+    
+    # ── OddsPath plots ────────────────────────────────────────────────────────
+    OddsPath_PLOT1 <- ggplot(big.coords_df,
+                             aes(x = reorder(rownames(big.coords_df), OddsPath_path),
+                                 y = OddsPath_path,
+                                 fill = as.factor(reorder(rownames(big.coords_df), OddsPath_path)))) +
+      geom_col() + theme_bw() + xlab("") +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+            legend.position = "none") +
+      scale_fill_brewer(palette = "PRGn")
+    output$plot4 <- renderPlot({ OddsPath_PLOT1 })
+    
+    OddsPath_PLOT2 <- ggplot(big.coords_df,
+                             aes(x = reorder(rownames(big.coords_df), -OddsPath_benign),
+                                 y = OddsPath_benign,
+                                 fill = as.factor(reorder(rownames(big.coords_df), -OddsPath_benign)))) +
+      geom_col() + theme_bw() + xlab("") +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+            legend.position = "none") +
+      scale_fill_brewer(palette = "PRGn")
+    output$plot5 <- renderPlot({ OddsPath_PLOT2 })
+    
+    output$RF_intro   <- renderText({ "Random Forest 3-fold CV error:" })
+    output$RF_cv      <- renderText({ rf_cv$error.cv[1] })
+    
+    # NB CV output render table
+    if (input$useCustomNB == TRUE) {
+      if (input$rbNB == "LOOCV"){
+        nb_loo_df <- as.data.frame(nb_model$results)
+        output$nb_cv_table <- renderTable({ nb_loo_df }, bordered = TRUE)
+      }
+    }
+    else{
+      nb_3foldCV_df <- as.data.frame(nb_model$results)
+      output$nb_cv_table <- renderTable({ nb_3foldCV_df }, bordered = TRUE)
+    }
+    # RF CV output render table
+    if (input$useCustomRF == TRUE) {
+      if (input$rbRF == "LOOCV"){
+        rf_loo_df <- as.data.frame(rf_model$results)
+        output$rf_cv_table <- renderTable({ rf_loo_df }, bordered = TRUE)
+      }
+    }
+    else{
+      rf_3foldCV_df <- as.data.frame(rf_model$results)
+      output$rf_cv_table <- renderTable({ rf_3foldCV_df }, bordered = TRUE)
+    }
+    
+    
+    output$loocv_text <- renderUI({
+      tagList(
+        hr(),
+        h4("Cross Validation table"),
+        h5("Naive Bayes"),
+        # add if LOOCV vs 3-fold CV
+        tableOutput("nb_cv_table"),
+        h5("Random Forest"),
+        tableOutput("rf_cv_table")
+      )
+    })
+
+    # ── Downloads ─────────────────────────────────────────────────────────────
+    output$downloadData <- downloadHandler(
+      filename = function() paste("data-Metrics-", Sys.Date(), ".csv", sep = ""),
+      content  = function(file) write.csv(big.coords_df, file))
+    
+    output$downloadData2 <- downloadHandler(
+      filename = function() paste("data-VariantLevelTestSplit-", Sys.Date(), ".csv", sep = ""),
+      content  = function(file) write.csv(test_noClass_df2, file))
+    
+    output$downloadData3 <- downloadHandler(
+      filename = function() paste("data-VariantLevelALL-", Sys.Date(), ".csv", sep = ""),
+      content  = function(file) write.csv(no_na_MAVEonly_df, file))
+    
+    output$downloadData4 <- downloadHandler(
+      filename = function() paste("data-MetricsTrainingTestSplits-", Sys.Date(), ".csv", sep = ""),
+      content = function(file) {
+        write.csv(test_train_split_metrics, file)})
+    
+    output$downloadData5 <- downloadHandler(
+      filename = function() paste("data-VariantLevelFullTruthSet-", Sys.Date(), ".csv", sep = ""),
+      content  = function(file) write.csv(truthSet_forROCandOddsPath_df, file))
+    
+    output$downloadPlot <- downloadHandler(
+      filename = function() paste("outputPlotsPC", Sys.Date(), '.svg', sep = ''),
+      content  = function(file)
+        ggsave(file, plot = k_meansPLOT2 + k_meansPLOT1 + plot_layout(ncol = 1),
+               width = 8, height = 16, dpi = 300, units = "in"))
+    
+    output$downloadPlot2 <- downloadHandler(
+      filename = function() paste("outputPlotsOddsPath", Sys.Date(), '.svg', sep = ''),
+      content  = function(file)
+        ggsave(file, plot = grid.arrange(OddsPath_PLOT1, OddsPath_PLOT2, nrow = 2,
+                                         heights = c(2, 2)),
+               width = 8, height = 10, dpi = 300, units = "in"))
+    
+    output$downloadPlot3 <- downloadHandler(
+      filename = function() paste("outputPlotsRidgeline", Sys.Date(), '.svg', sep = ''),
+      content  = function(file)
+        ggsave(file, plot = histogramPLOT3 + histogramPLOT1 + histogramPLOT2 + plot_layout(ncol = 1),
+               width = 8, height = 16, dpi = 300, units = "in"))
+  })
+}
+
+shinyApp(ui, server)
